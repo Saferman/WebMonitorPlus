@@ -9,7 +9,7 @@ def ping():
     logger.info('pong!!')
 
 
-# 定时器
+# # 定时器
 scheduler = BackgroundScheduler()
 scheduler.configure(timezone='Asia/Shanghai')
 scheduler.add_jobstore(DjangoJobStore(), 'default')
