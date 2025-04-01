@@ -1,5 +1,6 @@
 #!/bin/bash
 # if you modify models, you need to run this command
+rm -rf /tmp/*
 python manage.py makemigrations
 python manage.py migrate
 python manage.py initadmin --username saferman --password 0esilent4

@@ -132,10 +132,10 @@ class PythonScriptTaskAdmin(ImportExportModelAdmin):
 
     list_display = [
         'id', 'name', 'script', 'description', 'frequency', 'timeout',  'create_time',
-        'is_enabled','no_repeat'
+        'is_enabled','no_repeat','is_run_now'
     ]
     list_editable = ('name', 'script', 'description', 'frequency', 'timeout',
-                     'is_enabled','no_repeat')
+                     'is_enabled','no_repeat','is_run_now')
     filter_horizontal = ('notification', )
 
 

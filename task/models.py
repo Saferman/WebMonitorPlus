@@ -268,9 +268,11 @@ class RSSTask(models.Model):
 class PythonScriptTask(models.Model):
     name = models.CharField(max_length=100, verbose_name='任务名称', null=False)
     script = models.TextField(verbose_name='Python脚本代码', null=False, 
-                            help_text='请输入要执行的Python代码，目前只支持python3.6版本的，注意：\n'
+                            help_text='请输入要执行的Python代码，目前只支持python3.8版本的，注意：\n'
                                     '1. result: 用于存储需要发送给用户消息，一定要设置为脚本的全局变量，且是字符串类型\n'
                                     '2. 请自行确保docker环境已经按照了模块，可以联系管理员添加requirements.txt\n'
+                                    '3. result 为空字符串时，不发送消息\n'
+                                    '4. 请注意if __name__ == "__main__"的内容是无法执行的'
                                     )
     
     description = models.TextField(verbose_name='脚本描述', null=False, 
@@ -280,7 +282,7 @@ class PythonScriptTask(models.Model):
     # 执行频率
     frequency = models.FloatField(null=False, default=5, 
                                 verbose_name='执行频率(分钟)', 
-                                validators=[MinValueValidator(0)],help_text='一个小时输入：60，一天输入：1440')
+                                validators=[MinValueValidator(0)],help_text='可以小数会折算成秒，一个小时输入：60，一天输入：1440')
     
     # 时间记录
     create_time = models.DateTimeField(null=False, auto_now_add=True, 
@@ -289,8 +291,11 @@ class PythonScriptTask(models.Model):
     # 执行条件
     is_enabled = models.BooleanField(default=True, verbose_name='是否启用')
 
+    # 是否创建和更新时候立刻执行
+    is_run_now = models.BooleanField(default=False, verbose_name='是否立刻执行',
+                                     help_text='如果为True，则创建和更新任务时立刻执行')
     # 超时时间
-    timeout = models.IntegerField(null=False, default=60, 
+    timeout = models.IntegerField(null=False, default=300, 
                                 verbose_name='超时时间(秒)', 
                                 validators=[MinValueValidator(0)])
 
@@ -335,7 +340,7 @@ class PythonScriptTask(models.Model):
             
             # 添加到调度器
             if self.is_enabled:
-                add_job(id, self.frequency, 'python')
+                add_job(id, self.frequency, 'python',self.is_run_now)
         
         # 更新任务
         else:
@@ -352,7 +357,7 @@ class PythonScriptTask(models.Model):
             
             # 更新调度器
             if self.is_enabled:
-                add_job(id, self.frequency, 'python')
+                add_job(id, self.frequency, 'python',self.is_run_now)
             else:
                 remove_job(id, 'python')
             

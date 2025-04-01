@@ -1,8 +1,8 @@
 import logging
 import traceback
 import multiprocessing
-from datetime import datetime
-
+from datetime import datetime,timedelta
+from apscheduler.triggers.date import DateTrigger
 import markdown
 from apscheduler.jobstores.base import JobLookupError
 from func_timeout.exceptions import FunctionTimedOut
@@ -202,7 +202,19 @@ def monitor(id, type):
     task_status.save()
 
 
-def add_job(id, interval, type='html'):
+def execute_and_remove_job(job_id, func, *args):
+    """执行任务并在完成后删除"""
+    try:
+        func(*args)
+    finally:
+        try:
+            scheduler.remove_job(job_id)
+            logger.info(f'一次性任务{job_id}执行完成并删除')
+        except JobLookupError:
+            pass
+
+
+def add_job(id, interval, type='html',is_run_now=False):
     task_id = ''
     if type == 'html':
         task_id = id
@@ -215,20 +227,26 @@ def add_job(id, interval, type='html'):
     except Exception:
         pass
     if type == 'python':
+        if is_run_now:
+            logger.info('立即执行python脚本（3秒后），可能会因为调度执行不成功')
+            # 创建一次性任务
+            one_time_job_id = f'one_time_task_{task_id}'
+            scheduler.add_job(func=execute_and_remove_job,
+                            args=(one_time_job_id, execute_python_script, id),
+                            trigger=DateTrigger(run_date=datetime.now()+timedelta(seconds=3)),
+                            id=one_time_job_id,
+                            replace_existing=True,
+                            misfire_grace_time=300)
+            
         scheduler.add_job(func=execute_python_script,
-                        args=(
-                            id,
-                        ),
+                        args=(id,),
                         trigger='interval',
                         minutes=interval,
                         id='task_{}'.format(task_id),
                         replace_existing=True)
     else:
         scheduler.add_job(func=monitor,
-                        args=(
-                            id,
-                            type,
-                        ),
+                        args=(id, type),
                         trigger='interval',
                         minutes=interval,
                         id='task_{}'.format(task_id),
@@ -260,10 +278,28 @@ def run_script(script):
             # 初始化结果变量
             namespace = globals()
             
+            # # 创建StringIO对象来捕获输出
+            # import io
+            # import sys
+            
+            # # 保存原始的标准输出和错误
+            # old_stdout = sys.stdout
+            
+            # # 创建StringIO对象
+            # stdout_capture = io.StringIO()
+            
+            # # 重定向输出
+            # sys.stdout = stdout_capture
+            
             # 执行用户脚本
-            # 使用namespace作为全局命名空间
-            # 第二个参数用户限制查询可以访问的模块或变量，这里不做限制
             exec(script, namespace)
+            
+            # # 恢复原始输出
+            # sys.stdout = old_stdout
+            
+            # # 获取捕获的输出
+            # output = stdout_capture.getvalue()
+            # logger.info("执行脚本输出：\n" + output+"-"*50)
             
             # 检查是否定义了result变量
             if 'result' not in namespace:
@@ -284,9 +320,9 @@ def run_script(script):
                     "status": "success",
                     "message": code_result
                 }
-         
             
         except Exception as e:
+            logger.error(traceback.format_exc())
             return {
                 "status": "error",
                 "message": f"脚本执行出错: {str(e)}"
@@ -301,7 +337,7 @@ def execute_python_script(id):
         # 获取任务信息
         task = PythonScriptTask.objects.get(id=id)
         # 获取任务所有配置参数
-        name =task.name
+        name = task.name
         script = task.script
         notifications = [i for i in task.notification.iterator()]
         no_repeat = task.no_repeat
@@ -313,9 +349,17 @@ def execute_python_script(id):
             status = '任务未启用'
         else:
             try:
-                last = Content.objects.get(task_id=id, task_type=type)
-            except Exception:
-                last = Content(task_id=id)
+                last = Content.objects.get(task_id=id, task_type='python')
+            except Content.DoesNotExist:
+                last = Content(task_id=id, task_type='python')
+                last.save()
+            except Content.MultipleObjectsReturned:
+                # 如果存在多个记录，删除所有记录并创建新的
+                Content.objects.filter(task_id=id, task_type='python').delete()
+                last = Content(task_id=id, task_type='python')
+                last.save()
+                logger.info(f'清理了任务{id}的重复Content记录')
+                
             last_content = last.content
 
             # 创建进程池
@@ -337,16 +381,18 @@ def execute_python_script(id):
                 pool.join()
 
             global_content = result.get('message', '')
-            if no_repeat and global_content == last_content:
-                status = '任务获取的结果和上一次相同，因为你启用了不重复，所以不发送消息'
-            else:
-                status = '任务执行成功，已发送通知'
 
             # 发送通知并记录执行结果
             logger.info(
                 'content: {}, last_content: {}, status: {}'.
                 format(global_content, last_content, status))
-            send_message(global_content, name, notifications)
+
+            if no_repeat and global_content == last_content:
+                status = '任务获取的结果和上一次相同，因为你启用了不重复，所以不发送消息'
+            else:
+                status = '任务执行成功，已发送通知'
+                if global_content != "":
+                    send_message(global_content, name, notifications)
             last.content = global_content
             last.save()
 
