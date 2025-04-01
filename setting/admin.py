@@ -3,7 +3,27 @@ from django.contrib import admin
 from import_export import resources
 from import_export.admin import ImportExportModelAdmin
 
-from .models import Notification, PushoverSetting, SystemMailSetting, Log, SlackSetting, TelegramSetting
+from .models import Notification, PushoverSetting, SystemMailSetting, Log, SlackSetting, TelegramSetting, BarkSetting
+
+class BarkSettingResource(resources.ModelResource):
+    class Meta:
+        model = BarkSetting
+        skip_unchanged = True
+        report_skipped = True
+
+
+@admin.register(BarkSetting)
+class BarkSettingAdmin(ImportExportModelAdmin):
+    resource_class = BarkSettingResource
+
+    list_display = [
+        'domain'
+    ]
+
+    list_editable = ('domain',)
+
+    list_display_links = None
+    actions_on_top = True
 
 
 class SystemMailSettingResource(resources.ModelResource):

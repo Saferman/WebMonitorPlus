@@ -154,7 +154,7 @@ SIMPLEUI_ICON = {
 
 SIMPLEUI_ANALYSIS = False
 SIMPLEUI_STATIC_OFFLINE = True
-SIMPLEUI_LOGO = 'https://www.logicjake.xyz/img/favicon.ico'
+SIMPLEUI_LOGO = 'https://saferman.github.io/gallery/assets/img/watch.png'
 
 # logging配置
 log_path = os.path.join(BASE_DIR, 'static', 'log')

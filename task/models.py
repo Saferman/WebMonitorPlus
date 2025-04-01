@@ -77,7 +77,7 @@ class TaskStatus(models.Model):
         if self.task_status == 0:
             if self.last_status != '更新任务成功':
                 if self.task_type == 'html':
-                    task = Task.objects.get(id=task_id)
+                    task = PageMonitorTask.objects.get(id=task_id)
                     add_job(task_id, task.frequency)
                 elif self.task_type == 'rss':
                     rss_task = RSSTask.objects.get(id=task_id)
@@ -98,7 +98,7 @@ class TaskStatus(models.Model):
     short_last_status.short_description = '上次运行结果'
 
 
-class Task(models.Model):
+class PageMonitorTask(models.Model):
     name = models.CharField(max_length=100, verbose_name='任务名称', null=False)
     url = models.CharField(max_length=1000,
                            verbose_name='监控网址',
@@ -164,7 +164,7 @@ class Task(models.Model):
 
         # 新建
         if not self.pk:
-            super(Task, self).save(*args, **kwargs)
+            super(PageMonitorTask, self).save(*args, **kwargs)
             id = self.pk
 
             add_job(id, self.frequency)
@@ -172,7 +172,7 @@ class Task(models.Model):
             task_status = TaskStatus(task_name=self.name, task_id=id)
             task_status.save()
         else:
-            super(Task, self).save(*args, **kwargs)
+            super(PageMonitorTask, self).save(*args, **kwargs)
             id = self.pk
 
             task_status = TaskStatus.objects.get(task_id=id, task_type='html')
@@ -196,7 +196,7 @@ class Task(models.Model):
 
         logger.info('task_{}删除'.format(id))
 
-        super(Task, self).delete(*args, **kwargs)
+        super(PageMonitorTask, self).delete(*args, **kwargs)
 
 
 class RSSTask(models.Model):
@@ -263,3 +263,111 @@ class RSSTask(models.Model):
         logger.info('task_RSS{}删除'.format(id))
 
         super(RSSTask, self).delete(*args, **kwargs)
+
+
+class PythonScriptTask(models.Model):
+    name = models.CharField(max_length=100, verbose_name='任务名称', null=False)
+    script = models.TextField(verbose_name='Python脚本代码', null=False, 
+                            help_text='请输入要执行的Python代码，目前只支持python3.6版本的，注意：\n'
+                                    '1. result: 用于存储需要发送给用户消息，一定要设置为脚本的全局变量，且是字符串类型\n'
+                                    '2. 请自行确保docker环境已经按照了模块，可以联系管理员添加requirements.txt\n'
+                                    )
+    
+    description = models.TextField(verbose_name='脚本描述', null=False, 
+                            help_text='简单描述一下脚本任务，方便管理的时候知道这个任务是做什么的'
+                                    )
+
+    # 执行频率
+    frequency = models.FloatField(null=False, default=5, 
+                                verbose_name='执行频率(分钟)', 
+                                validators=[MinValueValidator(0)],help_text='一个小时输入：60，一天输入：1440')
+    
+    # 时间记录
+    create_time = models.DateTimeField(null=False, auto_now_add=True, 
+                                     verbose_name='创建时间')
+
+    # 执行条件
+    is_enabled = models.BooleanField(default=True, verbose_name='是否启用')
+
+    # 超时时间
+    timeout = models.IntegerField(null=False, default=60, 
+                                verbose_name='超时时间(秒)', 
+                                validators=[MinValueValidator(0)])
+
+    # 是否只在和上一次消息不一样的时候才发送
+    no_repeat = models.BooleanField(default=True, verbose_name='是否去重',help_text='如果为True，则只有在和上一次消息不一样的时候才发送')
+
+    # 通知设置
+    notification = models.ManyToManyField(Notification, blank=False, 
+                                        verbose_name='通知方式')
+    
+    # # 执行结果处理
+    # success_condition = models.TextField(blank=True, verbose_name='成功条件', 
+    #                                    help_text='Python表达式，用于判断脚本是否执行成功。例如：\n'
+    #                                            'result.get("status") == "success"\n'
+    #                                            '如果不设置，则脚本正常执行完成即视为成功')
+    
+
+
+    class Meta:
+        verbose_name = "Python脚本任务"
+        verbose_name_plural = "Python脚本任务管理"
+
+
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        from task.utils.scheduler import add_job, remove_job
+        
+        # 新建任务
+        if not self.pk:
+            super(PythonScriptTask, self).save(*args, **kwargs)
+            id = self.pk
+            
+            # 创建任务状态
+            task_status = TaskStatus(
+                task_name=self.name,
+                task_id=id,
+                task_type='python'
+            )
+            task_status.save()
+            
+            # 添加到调度器
+            if self.is_enabled:
+                add_job(id, self.frequency, 'python')
+        
+        # 更新任务
+        else:
+            super(PythonScriptTask, self).save(*args, **kwargs)
+            id = self.pk
+            
+            # 更新任务状态
+            task_status = TaskStatus.objects.get(task_id=id, task_type='python')
+            task_status.task_name = self.name
+            task_status.last_status = '更新任务成功'
+            task_status.last_run = datetime.now()
+            task_status.task_status = 0 if self.is_enabled else 1
+            task_status.save()
+            
+            # 更新调度器
+            if self.is_enabled:
+                add_job(id, self.frequency, 'python')
+            else:
+                remove_job(id, 'python')
+            
+            logger.info('python_script_task_{}更新'.format(id))
+
+    def delete(self, *args, **kwargs):
+        from task.utils.scheduler import remove_job
+        
+        id = self.pk
+        remove_job(id, 'python')
+        
+        TaskStatus.objects.filter(task_id=id, task_type='python').delete()
+        Content.objects.filter(task_id=id, task_type='python').delete()
+        
+        logger.info('python_script_task_{}删除'.format(id))
+        super(PythonScriptTask, self).delete(*args, **kwargs)
+
+   

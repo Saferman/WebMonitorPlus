@@ -25,4 +25,4 @@ chrpath libssl-dev libxft-dev libfreetype6 libfreetype6-dev libfontconfig1 libfo
 EXPOSE $PORT
 
 RUN chmod +x run.sh
-CMD ./run.sh $PORT $USERNAME $PASSWORD
+CMD /bin/bash

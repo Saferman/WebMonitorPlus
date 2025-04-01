@@ -2,7 +2,10 @@ import json
 import logging
 import re
 import requests
+import traceback
 
+
+from setting.models import BarkSetting
 from task.utils.notification.notification import Notification
 import urllib.parse
 
@@ -23,14 +26,42 @@ def getUrlQuery(content):
 
 
 class BarkNotification(Notification):
+    def __init__(self):
+        try:
+            setting = BarkSetting.objects.first()
+        except Exception:
+            logger.error('没有设置 Bark server url，无法发送通知')
+            logger.error(traceback.format_exc())
+            raise Exception('没有设置 Bark server url，无法发送通知')
+
+        self.domain = setting.domain
+
     def send(self, to, header, content):
+        """to是Bark Key也就是device key,header是任务名字，content是任务内容"""
         if to == '默认':
             logger.error('没有设置Bark KEY，无法发送Bark通知')
             raise Exception('没有设置Bark KEY，无法发送Bark通知')
-        url = 'https://api.day.app/{}/{}/{}{}'.format(
-            to, header, urllib.parse.quote_plus(content), getUrlQuery(content))
-        r = requests.post(url)
+        
+        try:
+            logger.info(f'Python脚本任务的通知内容：\n发送Bark通知的URL（结尾不能是/): {self.domain}\nDevice Key: {to}\nHeader（也是通知标题）: {header}\nContent（通知内容也是Python脚本执行结果）: {content}\n'+"-"*20)
+            response = requests.post(
+                url="{}/push".format(self.domain), #//push都会报错
+                headers={
+                    "Content-Type": "application/json; charset=utf-8",
+                },
+                data=json.dumps({
+                    "body": content,
+                    "device_key": to,
+                    "title": header,
+                    "sound": "minuet",
+                    "badge": 1,
+                    # "icon": "https://day.app/assets/images/avatar.jpg",
+                    "group": "test",
+                })
+            )
+            if response.status_code != 200:
+                raise Exception(response.text)
 
-        res = json.loads(r.text)
-        if res['code'] != 200:
-            raise Exception(res['message'])
+        except requests.exceptions.RequestException:
+            raise Exception('Bark HTTP Request failed')
+

@@ -85,6 +85,18 @@ class SlackSetting(models.Model):
     def __str__(self):
         return 'Slack ' + self.token
 
+class BarkSetting(models.Model):
+    domain = models.CharField(max_length=100,
+                             null=False,
+                             verbose_name='Bark server url',help_text='https://api.day.app或者http://8.210.22.195:8080，请注意不要/结尾')
+
+    class Meta:
+        verbose_name = "Bark 设置"
+        verbose_name_plural = "Bark 设置"
+
+    def __str__(self):
+        return self.domain
+
 
 class TelegramSetting(models.Model):
     token = models.CharField(max_length=100,
